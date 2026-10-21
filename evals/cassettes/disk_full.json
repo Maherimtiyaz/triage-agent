@@ -1,0 +1,31 @@
+{
+  "case": "disk_full",
+  "responses": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [{"id": "c1", "name": "get_metric", "arguments": {"name": "disk_pct"}}]
+      },
+      "stop_reason": "tool_use",
+      "usage": {"input_tokens": 780, "output_tokens": 30}
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [{"id": "c2", "name": "query_logs", "arguments": {"contains": "space", "limit": 20}}]
+      },
+      "stop_reason": "tool_use",
+      "usage": {"input_tokens": 940, "output_tokens": 34}
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": "{\"severity\": \"SEV2\", \"summary\": \"Ingest halted on the primary node because disk usage reached 99.6%, so writes to segments and WAL failed.\", \"root_cause\": \"Disk full on the primary node: the data volume hit capacity and writes failed with no space left on device.\", \"confidence\": 0.88, \"evidence\": [{\"source\": \"get_metric\", \"detail\": \"disk_pct 88 -> 99.6\"}, {\"source\": \"query_logs\", \"detail\": \"'no space left on device' writing segments and WAL\"}], \"suggested_fix\": \"Free space or expand the /data volume, then resume ingest.\", \"suspected_deploy\": null}"
+      },
+      "stop_reason": "end_turn",
+      "usage": {"input_tokens": 1260, "output_tokens": 190}
+    }
+  ]
+}

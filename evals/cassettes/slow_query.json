@@ -1,0 +1,31 @@
+{
+  "case": "slow_query",
+  "responses": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [{"id": "c1", "name": "get_metric", "arguments": {"name": "db_connections"}}]
+      },
+      "stop_reason": "tool_use",
+      "usage": {"input_tokens": 800, "output_tokens": 32}
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [{"id": "c2", "name": "query_logs", "arguments": {"contains": "pool", "limit": 20}}]
+      },
+      "stop_reason": "tool_use",
+      "usage": {"input_tokens": 980, "output_tokens": 36}
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": "{\"severity\": \"SEV2\", \"summary\": \"p99 latency climbed to 2400ms as the database connection pool saturated; requests timed out waiting for a connection.\", \"root_cause\": \"Database connection pool exhaustion caused by a slow query on the orders table holding connections.\", \"confidence\": 0.79, \"evidence\": [{\"source\": \"get_metric\", \"detail\": \"db_connections 78 -> 100 (saturated)\"}, {\"source\": \"query_logs\", \"detail\": \"slow query 4120ms then 'pool 100/100 in use' and connection timeouts\"}], \"suggested_fix\": \"Kill the slow query and add a missing index on orders(status); raise pool size as a stopgap.\", \"suspected_deploy\": null}"
+      },
+      "stop_reason": "end_turn",
+      "usage": {"input_tokens": 1300, "output_tokens": 200}
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "case": "bad_deploy",
+  "responses": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [{"id": "c1", "name": "list_deploys", "arguments": {"limit": 5}}]
+      },
+      "stop_reason": "tool_use",
+      "usage": {"input_tokens": 820, "output_tokens": 35}
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [{"id": "c2", "name": "query_logs", "arguments": {"level": "ERROR", "limit": 20}}]
+      },
+      "stop_reason": "tool_use",
+      "usage": {"input_tokens": 1010, "output_tokens": 40}
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [{"id": "c3", "name": "get_metric", "arguments": {"name": "error_rate_pct"}}]
+      },
+      "stop_reason": "tool_use",
+      "usage": {"input_tokens": 1240, "output_tokens": 38}
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": "{\"severity\": \"SEV2\", \"summary\": \"Checkout error rate rose from 0.4% to 35% immediately after the 13:58 deploy, degrading the payments path.\", \"root_cause\": \"Deploy v2.4.1 regressed the payments client, producing upstream 500s from payments.\", \"confidence\": 0.83, \"evidence\": [{\"source\": \"list_deploys\", \"detail\": \"v2.4.1 rolled out at 13:58, minutes before onset\"}, {\"source\": \"query_logs\", \"detail\": \"ERROR upstream 500 from payments after 14:01\"}, {\"source\": \"get_metric\", \"detail\": \"error_rate_pct 0.4 -> 35.0\"}], \"suggested_fix\": \"Roll back to v2.4.0 and review the payments client refactor.\", \"suspected_deploy\": \"v2.4.1\"}"
+      },
+      "stop_reason": "end_turn",
+      "usage": {"input_tokens": 1500, "output_tokens": 210}
+    }
+  ]
+}
