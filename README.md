@@ -7,14 +7,11 @@ Most "AI agent" repos stop at the loop and call it done. This one is about
 everything *around* the loop — the part that decides whether a system survives
 contact with production.
 
-[![CI](https://github.com/OWNER/triage-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/triage-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/Maherimtiyaz/triage-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Maherimtiyaz/triage-agent/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://img.shields.io/badge/tests-35%20passing-brightgreen)
 ![Evals](https://img.shields.io/badge/evals-3%2F3-success)
-
-> Replace `OWNER` with your GitHub username after forking (see
-> [Publishing](#publishing) below).
 
 ```
 $ python evals/runner.py
@@ -45,7 +42,7 @@ model.
 - [Extending it](#extending-it)
 - [Testing and evals](#testing-and-evals)
 - [Project layout](#project-layout)
-- [Publishing](#publishing)
+- [Forking](#forking)
 - [Further reading](#further-reading)
 
 ---
@@ -63,7 +60,7 @@ validates its output, traces it, and scores it. This repo is the harness.
 Requires Python 3.11+.
 
 ```bash
-git clone https://github.com/OWNER/triage-agent.git
+git clone https://github.com/Maherimtiyaz/triage-agent.git
 cd triage-agent
 
 # Windows (PowerShell)
@@ -331,21 +328,19 @@ tests/            unit + behavioral tests
 docs/             architecture deep-dive
 ```
 
-## Publishing
+## Forking
 
-After forking, replace `OWNER` in these files with your GitHub username:
+Everything above works unchanged on a fork. If you want the badge and package
+URLs to point at *your* account, replace `Maherimtiyaz` in:
 
-- `README.md` (badge URLs)
+- `README.md` (badge and clone URLs)
 - `pyproject.toml` (`[project.urls]`)
 - `CHANGELOG.md` (release link)
 
-Then:
+Then commit and push:
 
 ```bash
-git init -b main
-git add .
-git commit -m "chore: initial commit"
-git remote add origin https://github.com/OWNER/triage-agent.git
+git remote set-url origin https://github.com/<your-username>/triage-agent.git
 git push -u origin main
 ```
 

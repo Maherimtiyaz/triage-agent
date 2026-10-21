@@ -35,4 +35,4 @@ produce a schema-validated incident report.
 - 35 tests covering guardrails, tools, output validation, context, and loop
   behaviour (budgets, retries, provider errors, invalid output).
 
-[0.1.0]: https://github.com/OWNER/triage-agent/releases/tag/v0.1.0
+[0.1.0]: https://github.com/Maherimtiyaz/triage-agent/releases/tag/v0.1.0

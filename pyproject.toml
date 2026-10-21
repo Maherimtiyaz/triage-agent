@@ -33,9 +33,9 @@ dev = [
 triage = "triage_agent.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/OWNER/triage-agent"
-Repository = "https://github.com/OWNER/triage-agent"
-Issues = "https://github.com/OWNER/triage-agent/issues"
+Homepage = "https://github.com/Maherimtiyaz/triage-agent"
+Repository = "https://github.com/Maherimtiyaz/triage-agent"
+Issues = "https://github.com/Maherimtiyaz/triage-agent/issues"
 
 [build-system]
 requires = ["hatchling"]
