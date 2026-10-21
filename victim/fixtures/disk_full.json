@@ -1,0 +1,22 @@
+{
+  "logs": [
+    "2026-10-17T02:10:00Z INFO  service healthy",
+    "2026-10-17T02:14:22Z WARN  disk usage on /data above 95%",
+    "2026-10-17T02:16:05Z ERROR failed to write /data/segments/000123.seg: no space left on device",
+    "2026-10-17T02:16:40Z ERROR ingest halted: write failure",
+    "2026-10-17T02:18:12Z ERROR failed to write /data/wal/0007.wal: no space left on device"
+  ],
+  "deploys": [
+    {"ts": "2026-10-15T14:00:00Z", "version": "v1.9.3", "commit": "tune segment rollover"}
+  ],
+  "metrics": {
+    "disk_pct": [
+      ["02:10", 88.0], ["02:14", 95.2], ["02:16", 99.4], ["02:18", 99.6]
+    ],
+    "error_rate_pct": [["02:10", 0.0], ["02:18", 5.0]],
+    "cpu_pct": [["02:18", 12.0]],
+    "mem_pct": [["02:18", 30.0]],
+    "request_latency_p99_ms": [["02:18", 90.0]],
+    "db_connections": [["02:18", 8.0]]
+  }
+}

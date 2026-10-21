@@ -1,0 +1,28 @@
+{
+  "logs": [
+    "2026-10-17T11:40:00Z INFO  service healthy",
+    "2026-10-17T11:52:31Z WARN  db connection pool 92/100 in use",
+    "2026-10-17T11:53:02Z WARN  slow query (4120ms): SELECT * FROM orders WHERE status='pending'",
+    "2026-10-17T11:53:40Z WARN  db connection pool 100/100 in use",
+    "2026-10-17T11:54:01Z ERROR request timeout waiting for db connection (5000ms)",
+    "2026-10-17T11:54:02Z ERROR request timeout waiting for db connection (5000ms)",
+    "2026-10-17T11:55:00Z ERROR p99 latency 2400ms exceeds SLO"
+  ],
+  "deploys": [
+    {"ts": "2026-10-17T08:00:00Z", "version": "v3.1.0", "commit": "adds order status index migration"}
+  ],
+  "metrics": {
+    "db_connections": [
+      ["11:50", 78.0], ["11:52", 92.0], ["11:53", 100.0],
+      ["11:54", 100.0], ["11:55", 100.0]
+    ],
+    "request_latency_p99_ms": [
+      ["11:50", 210.0], ["11:52", 640.0], ["11:53", 1500.0],
+      ["11:54", 2100.0], ["11:55", 2400.0]
+    ],
+    "error_rate_pct": [["11:50", 0.2], ["11:55", 1.8]],
+    "cpu_pct": [["11:55", 38.0]],
+    "mem_pct": [["11:55", 60.0]],
+    "disk_pct": [["11:55", 44.0]]
+  }
+}

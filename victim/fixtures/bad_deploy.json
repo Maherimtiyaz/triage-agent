@@ -1,0 +1,34 @@
+{
+  "logs": [
+    "2026-10-17T13:55:02Z INFO  checkout service starting version v2.4.1",
+    "2026-10-17T13:58:10Z INFO  deploy: v2.4.1 rolled out (commit 9f3ac21)",
+    "2026-10-17T13:59:44Z WARN  payments client retry budget nearly exhausted",
+    "2026-10-17T14:01:12Z ERROR upstream 500 from payments: connection reset by peer",
+    "2026-10-17T14:01:13Z ERROR checkout failed: upstream 500 from payments",
+    "2026-10-17T14:02:30Z ERROR upstream 500 from payments: connection reset by peer",
+    "2026-10-17T14:03:05Z ERROR checkout failed: upstream 500 from payments",
+    "2026-10-17T14:04:18Z WARN  thread pool saturation: 48/50 workers busy",
+    "2026-10-17T14:05:00Z ERROR error rate exceeded SLO threshold (35%)"
+  ],
+  "deploys": [
+    {"ts": "2026-10-16T09:12:00Z", "version": "v2.4.0", "commit": "stabilize search index retry"},
+    {"ts": "2026-10-17T13:58:10Z", "version": "v2.4.1", "commit": "9f3ac21 refactor payments client"}
+  ],
+  "metrics": {
+    "error_rate_pct": [
+      ["13:55", 0.4], ["13:58", 0.6], ["14:00", 12.0],
+      ["14:01", 24.5], ["14:03", 31.2], ["14:05", 35.0]
+    ],
+    "request_latency_p99_ms": [
+      ["13:55", 110.0], ["13:58", 118.0], ["14:00", 340.0],
+      ["14:01", 620.0], ["14:03", 880.0], ["14:05", 1200.0]
+    ],
+    "db_connections": [
+      ["13:55", 12.0], ["13:58", 14.0], ["14:00", 22.0],
+      ["14:01", 38.0], ["14:03", 61.0], ["14:05", 74.0]
+    ],
+    "cpu_pct": [["14:05", 42.0]],
+    "mem_pct": [["14:05", 55.0]],
+    "disk_pct": [["14:05", 61.0]]
+  }
+}
