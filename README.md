@@ -35,7 +35,8 @@ model.
 - [The one idea](#the-one-idea)
 - [Quickstart](#quickstart)
 - [Using a real model](#using-a-real-model)
-- [Free models — no API key](#free-models--no-api-key)
+- [Free models - no API key](#free-models--no-api-key)
+- [Record once, replay forever](#record-once-replay-forever)
 - [What it does](#what-it-does)
 - [The seven subsystems](#the-seven-subsystems)
 - [Configuration reference](#configuration-reference)
@@ -159,6 +160,57 @@ point `TRIAGE_BASE_URL` at their `/v1` and set `TRIAGE_API_KEY` if they need one
 > Free models are noticeably weaker at tool-calling than frontier models. Expect
 > more redundant queries and occasional malformed JSON — which is exactly why the
 > harness validates output and retries. Watch `tool_errors` in the trace summary.
+
+## Record once, replay forever
+
+A live run costs money, needs a network, needs the vendor to be up — and it is not
+reproducible. One flag fixes all three.
+
+```bash
+TRIAGE_PROVIDER=openai-compatible TRIAGE_MODEL=gemma4:31b-cloud \
+python -m triage_agent --scenario disk_full \
+  --record evals/cassettes/disk_full.json \
+  "Alert: ingest halted with 'no space left on device' at 02:16."
+```
+
+```
+RECORDED  8 model responses -> evals/cassettes/disk_full.json
+VERIFIED  cassette replays with identical status and step count
+```
+
+`--record` does not just write a file, it **audits it**: it immediately re-runs
+the task from the cassette and compares terminal status and step count. A
+cassette that does not replay is worse than no cassette — it silently changes
+what CI asserts. So the recording refuses to be trusted until it reproduces.
+
+Replay it with no model, no key, no network:
+
+```bash
+python -m triage_agent --scenario disk_full \
+  --replay evals/cassettes/disk_full.json \
+  "Alert: ingest halted at 02:16."
+```
+
+The cassette carries its own provenance:
+
+```json
+{
+  "provider": "openai-compatible",
+  "model": "gemma4:31b-cloud",
+  "scenario": "disk_full",
+  "recorded_at": "2026-10-24T07:50:14+00:00",
+  "turns": 8
+}
+```
+
+Only **successful** provider calls are recorded, so a retried `429` can never
+poison the transcript. Requests are kept in memory for debugging but are not
+persisted: the harness rebuilds them from the fixture each turn, which is what
+makes a stale cassette fail loudly instead of quietly drifting.
+
+**Re-record when** you change a prompt, a tool description, or a fixture. The
+eval suite goes red first; re-record, read the cassette diff, and if the new
+behaviour is better, commit it. That diff *is* your prompt-change review.
 
 ---
 
