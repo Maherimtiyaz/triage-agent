@@ -11,9 +11,14 @@ from __future__ import annotations
 import json
 import sys
 
-from triage_agent.config import load_settings
-from triage_agent.loop import run
-from triage_agent.providers import MockProvider, final_response, tool_call_response
+from triage_agent.config import Settings, load_settings
+from triage_agent.loop import build_provider, run
+from triage_agent.providers import (
+    MockProvider,
+    RecordingProvider,
+    final_response,
+    tool_call_response,
+)
 from triage_agent.types import Budget
 
 DEMO_SCRIPT = [
@@ -72,28 +77,74 @@ def _scenario_root(scenario: str) -> str:
     return str(tmp)
 
 
+def _take_value(argv: list[str], flag: str) -> str | None:
+    """Pop `--flag VALUE` out of argv. Returns None when the flag is absent."""
+    if flag not in argv:
+        return None
+    i = argv.index(flag)
+    if i + 1 >= len(argv):
+        raise SystemExit(f"{flag} requires a value")
+    value = argv[i + 1]
+    del argv[i : i + 2]
+    return value
+
+
+def _replay_matches(
+    cassette: str, task: str, settings: Settings, expected: tuple[str, int]
+) -> bool:
+    """Re-run the task from the cassette; compare status and step count.
+
+    A cassette that does not replay identically is worse than no cassette: it
+    silently changes what CI asserts. So recording verifies itself immediately.
+    """
+    replay = MockProvider.from_cassette(cassette)
+    budget = Budget(max_steps=settings.max_steps, max_cost_usd=settings.max_cost_usd)
+    result = run(task, provider=replay, settings=settings, budget=budget)
+    steps = result.budget.steps_used if result.budget else 0
+    return (result.status, steps) == expected
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv if argv is not None else sys.argv[1:])
 
-    scenario: str | None = None
-    if "--scenario" in argv:
-        i = argv.index("--scenario")
-        try:
-            scenario = argv[i + 1]
-        except IndexError:
-            raise SystemExit("--scenario requires a value") from None
-        del argv[i : i + 2]
+    scenario = _take_value(argv, "--scenario")
+    record_to = _take_value(argv, "--record")
+    replay_from = _take_value(argv, "--replay")
+    if record_to and replay_from:
+        raise SystemExit("--record and --replay are mutually exclusive")
 
     task = " ".join(argv) if argv else "Investigate the incident: error rate spiked at 14:05."
     settings = load_settings()
     if scenario:
         settings.victim_root = _scenario_root(scenario)
 
-    provider = None
-    if settings.provider == "mock":
+    recorder: RecordingProvider | None = None
+    if replay_from:
+        provider = MockProvider.from_cassette(replay_from)
+    elif record_to:
+        if settings.provider.strip().lower() == "mock":
+            raise SystemExit(
+                "--record needs a real model. Set TRIAGE_PROVIDER=openai-compatible "
+                "(free, via Ollama) or TRIAGE_PROVIDER=anthropic first."
+            )
+        recorder = RecordingProvider(
+            build_provider(settings),
+            record_to,
+            metadata={
+                "provider": settings.provider,
+                "model": settings.model,
+                "scenario": scenario,
+                "task": task,
+            },
+        )
+        provider = recorder
+    elif settings.provider == "mock":
         provider = MockProvider(DEMO_SCRIPT)
+    else:
+        provider = None  # run() builds the real provider
 
-    result = run(task, provider=provider, settings=settings, budget=Budget(max_steps=12))
+    budget = Budget(max_steps=settings.max_steps, max_cost_usd=settings.max_cost_usd)
+    result = run(task, provider=provider, settings=settings, budget=budget)
 
     print("=" * 72)
     print("TRACE")
@@ -112,6 +163,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"reason: {result.reason}")
         if result.raw_output:
             print(f"raw: {result.raw_output[:500]}")
+
+    if recorder is not None:
+        path = recorder.save()
+        expected = (result.status, result.budget.steps_used if result.budget else 0)
+        verified = _replay_matches(str(path), task, settings, expected)
+        print("-" * 72)
+        print(f"RECORDED  {len(recorder.responses)} model responses -> {path}")
+        if verified:
+            print("VERIFIED  cassette replays with identical status and step count")
+        else:
+            print("WARNING   replay diverged from the recorded run; do not trust this cassette")
+            return 1
 
     return 0 if result.status == "ok" else 1
 
