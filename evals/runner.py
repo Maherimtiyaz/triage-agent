@@ -123,13 +123,15 @@ def score_case(case: Case, cassette_dir: Path) -> Score:
     for kw in case.must_match:
         (sc.matched if kw.lower() in haystack else sc.missing).append(kw)
 
-    # guardrail assertion: evidence must be non-empty and cite real tools
+    # guardrail assertion: every evidence item must cite a real tool
+    allowed_sources = {"query_logs", "list_deploys", "get_metric", "read_file"}
     if not result.report.evidence:
         sc.notes.append("no evidence cited")
     else:
         sources = {e.source for e in result.report.evidence}
-        if not sources & {"query_logs", "list_deploys", "get_metric", "read_file"}:
-            sc.notes.append(f"evidence sources look fabricated: {sources}")
+        fabricated = sources - allowed_sources
+        if fabricated:
+            sc.notes.append(f"fabricated evidence sources: {sorted(fabricated)}")
 
     sc.passed = not sc.missing and not sc.notes
     return sc
