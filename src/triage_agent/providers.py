@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import random
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
@@ -227,6 +229,148 @@ def _from_anthropic_response(resp: object) -> LLMResponse:
     return LLMResponse(
         message=Message.assistant("\n".join(text_bits) or None, calls),
         stop_reason=normalized,
+        usage=usage,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# OpenAI-compatible endpoints (Ollama, OmniRoute, LM Studio, vLLM, OpenRouter)
+# --------------------------------------------------------------------------- #
+
+
+class OpenAICompatibleProvider:
+    """Adapter for any endpoint that speaks `POST /v1/chat/completions`.
+
+    This is the pragmatic default for free/self-hosted models: Ollama exposes
+    it natively, and so do OmniRoute, LM Studio, llama.cpp, vLLM and OpenRouter.
+    Written against stdlib urllib so it adds no dependency to the base install.
+
+    Note the two format quirks vs Anthropic:
+      * tool results are `role: "tool"` messages keyed by `tool_call_id`
+      * `arguments` must be a JSON *string*, not an object
+    """
+
+    def __init__(self, base_url: str, model: str, api_key: str = "") -> None:
+        self._url = base_url.rstrip("/") + "/chat/completions"
+        self._model = model
+        self._api_key = api_key
+
+    def complete(
+        self,
+        messages: list[Message],
+        tools: list[ToolSpec],
+        *,
+        max_tokens: int = 2048,
+        timeout_s: float = 60.0,
+    ) -> LLMResponse:
+        body: dict = {
+            "model": self._model,
+            "messages": _to_openai_messages(messages),
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        if tools:
+            body["tools"] = _to_openai_tools(tools)
+            body["tool_choice"] = "auto"
+
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+
+        req = urllib.request.Request(
+            self._url, data=json.dumps(body).encode(), headers=headers
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode(errors="replace")[:300]
+            raise ProviderError(f"HTTP {exc.code} from {self._url}: {detail}") from exc
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+            raise ProviderError(f"request to {self._url} failed: {exc}") from exc
+
+        return _from_openai_response(data)
+
+
+def _to_openai_messages(messages: list[Message]) -> list[dict]:
+    wire: list[dict] = []
+    for m in messages:
+        if m.role in ("system", "user"):
+            wire.append({"role": m.role, "content": m.content or ""})
+        elif m.role == "assistant":
+            item: dict = {"role": "assistant", "content": m.content or ""}
+            if m.tool_calls:
+                item["tool_calls"] = [
+                    {
+                        "id": c.id,
+                        "type": "function",
+                        "function": {
+                            "name": c.name,
+                            # OpenAI requires a JSON *string*, not an object
+                            "arguments": json.dumps(c.arguments),
+                        },
+                    }
+                    for c in m.tool_calls
+                ]
+            wire.append(item)
+        elif m.role == "tool":
+            wire.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": m.tool_call_id,
+                    "content": m.content or "",
+                }
+            )
+    return wire
+
+
+def _to_openai_tools(tools: list[ToolSpec]) -> list[dict]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t.name,
+                "description": t.description,
+                "parameters": t.input_schema,
+            },
+        }
+        for t in tools
+    ]
+
+
+def _from_openai_response(data: dict) -> LLMResponse:
+    choice = (data.get("choices") or [{}])[0]
+    msg = choice.get("message") or {}
+
+    calls: list[ToolCall] = []
+    for tc in msg.get("tool_calls") or []:
+        fn = tc.get("function") or {}
+        raw_args = fn.get("arguments")
+        if isinstance(raw_args, str):
+            try:
+                arguments = json.loads(raw_args or "{}")
+            except json.JSONDecodeError:
+                # Small models sometimes emit invalid JSON. Surface it as data
+                # so the tool layer reports "bad arguments" instead of crashing.
+                arguments = {"__invalid_json": raw_args}
+        else:
+            arguments = dict(raw_args or {})
+        calls.append(
+            ToolCall(id=tc.get("id", ""), name=fn.get("name", ""), arguments=arguments)
+        )
+
+    finish = choice.get("finish_reason")
+    stop: StopReason = "tool_use" if calls else ("max_tokens" if finish == "length" else "end_turn")
+
+    u = data.get("usage") or {}
+    usage = Usage(
+        input_tokens=u.get("prompt_tokens", 0),
+        output_tokens=u.get("completion_tokens", 0),
+        cache_read_tokens=(u.get("prompt_tokens_details") or {}).get("cached_tokens", 0),
+    )
+    return LLMResponse(
+        message=Message.assistant(msg.get("content"), calls),
+        stop_reason=stop,
         usage=usage,
     )
 
