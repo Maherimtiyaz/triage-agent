@@ -23,6 +23,7 @@ from triage_agent.output import IncidentReport, parse_report, retry_message
 from triage_agent.providers import (
     AnthropicProvider,
     MockProvider,
+    OpenAICompatibleProvider,
     Provider,
     ProviderError,
     call_with_retry,
@@ -59,6 +60,11 @@ needed) shaped like:
   "suggested_fix": "<the concrete next action>",
   "suspected_deploy": "<version or null>"
 }
+
+CRITICAL for `evidence`: each item's `source` MUST be the exact name of a tool
+you called — one of query_logs, list_deploys, get_metric, read_file. Never cite
+"alert", "logs", "metrics" or any other label, and never cite a tool you did
+not actually call. If you have no tool evidence, say so and set confidence low.
 """
 
 
@@ -73,9 +79,18 @@ class AgentResult:
     messages: list[Message] = field(default_factory=list)
 
 
+# Any endpoint that speaks POST /v1/chat/completions. Ollama is the free path.
+OPENAI_COMPATIBLE_ALIASES = frozenset(
+    {"openai-compatible", "openai_compatible", "openai", "ollama", "omniroute", "lmstudio", "vllm"}
+)
+
+
 def build_provider(settings: Settings, script: list | None = None) -> Provider:
-    if settings.provider == "anthropic":
+    kind = settings.provider.strip().lower()
+    if kind == "anthropic":
         return AnthropicProvider(settings.anthropic_api_key, settings.model)
+    if kind in OPENAI_COMPATIBLE_ALIASES:
+        return OpenAICompatibleProvider(settings.base_url, settings.model, settings.api_key)
     return MockProvider(script)
 
 
