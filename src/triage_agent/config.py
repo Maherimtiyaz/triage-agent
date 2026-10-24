@@ -26,15 +26,31 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "claude-sonnet-4-5": {"input": 3.0, "output": 15.0, "cache_read": 0.30},
     "claude-haiku-4-5": {"input": 1.0, "output": 5.0, "cache_read": 0.10},
     "mock-model": {"input": 0.0, "output": 0.0, "cache_read": 0.0},
+    # free / local models
+    "gemma4:31b-cloud": {"input": 0.0, "output": 0.0, "cache_read": 0.0},
+    "llama3.1:8b": {"input": 0.0, "output": 0.0, "cache_read": 0.0},
 }
 
 
 @dataclass
 class Settings:
+    # mock | anthropic | openai-compatible (aliases: ollama, omniroute, openai)
     provider: str = field(default_factory=lambda: os.environ.get("TRIAGE_PROVIDER", "mock"))
     model: str = field(default_factory=lambda: os.environ.get("TRIAGE_MODEL", "mock-model"))
     anthropic_api_key: str = field(
         default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY", "")
+    )
+
+    # For any OpenAI-compatible endpoint: Ollama, OmniRoute, LM Studio, vLLM.
+    # Works keyless against a local Ollama.
+    base_url: str = field(
+        default_factory=lambda: os.environ.get(
+            "TRIAGE_BASE_URL", "http://127.0.0.1:11434/v1"
+        )
+    )
+    api_key: str = field(
+        default_factory=lambda: os.environ.get("TRIAGE_API_KEY", "")
+        or os.environ.get("OMNIROUTE_API_KEY", "")
     )
 
     # The "prod" system under investigation. Root it at a directory so the
