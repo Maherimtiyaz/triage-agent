@@ -17,6 +17,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -111,6 +112,86 @@ def _response_from_dict(d: dict) -> LLMResponse:
         stop_reason=d.get("stop_reason", "end_turn"),
         usage=Usage(**d.get("usage", {})),
     )
+
+
+CASSETTE_VERSION = 1
+
+
+def _response_to_dict(resp: LLMResponse) -> dict:
+    """Inverse of `_response_from_dict` — the on-disk cassette shape."""
+    msg = resp.message
+    return {
+        "message": {
+            "role": msg.role,
+            "content": msg.content,
+            "tool_calls": [
+                {"id": c.id, "name": c.name, "arguments": c.arguments}
+                for c in msg.tool_calls
+            ],
+        },
+        "stop_reason": resp.stop_reason,
+        "usage": {
+            "input_tokens": resp.usage.input_tokens,
+            "output_tokens": resp.usage.output_tokens,
+            "cache_read_tokens": resp.usage.cache_read_tokens,
+        },
+    }
+
+
+class RecordingProvider:
+    """Wrap a real provider and persist its responses as a replayable cassette.
+
+    The asymmetry this fixes: a live run costs money, needs a network, needs the
+    vendor to be up, and is not reproducible. A cassette needs none of that and
+    replays byte-identically. Recording once is what turns "I saw it work on my
+    laptop" into "CI checks it on every commit".
+
+    Only successful calls are recorded. A `ProviderError` that gets retried never
+    lands in the cassette, so a replay cannot inherit a transient failure.
+    """
+
+    def __init__(
+        self,
+        inner: Provider,
+        path: str | Path,
+        metadata: dict | None = None,
+    ) -> None:
+        self._inner = inner
+        self._path = Path(path)
+        self._metadata = dict(metadata or {})
+        self.responses: list[LLMResponse] = []
+        self.requests: list[list[Message]] = []
+
+    def complete(
+        self,
+        messages: list[Message],
+        tools: list[ToolSpec],
+        *,
+        max_tokens: int = 2048,
+        timeout_s: float = 60.0,
+    ) -> LLMResponse:
+        self.requests.append(list(messages))
+        resp = self._inner.complete(
+            messages, tools, max_tokens=max_tokens, timeout_s=timeout_s
+        )
+        # Deliberately after the call: a raise means nothing is recorded.
+        self.responses.append(resp)
+        return resp
+
+    def save(self) -> Path:
+        """Write the cassette in the exact shape `MockProvider.from_cassette` reads."""
+        payload = {
+            "version": CASSETTE_VERSION,
+            "metadata": {
+                **self._metadata,
+                "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "turns": len(self.responses),
+            },
+            "responses": [_response_to_dict(r) for r in self.responses],
+        }
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return self._path
 
 
 # --------------------------------------------------------------------------- #
