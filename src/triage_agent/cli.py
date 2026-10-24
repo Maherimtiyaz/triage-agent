@@ -52,10 +52,42 @@ DEMO_SCRIPT = [
 ]
 
 
+def _scenario_root(scenario: str) -> str:
+    """Materialize one fixture as an isolated sandbox root.
+
+    The agent should see exactly one incident's data — never the union of all
+    fixtures. Same trick the eval runner uses.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    fixture = repo / "victim" / "fixtures" / f"{scenario}.json"
+    if not fixture.is_file():
+        available = sorted(p.stem for p in (repo / "victim" / "fixtures").glob("*.json"))
+        raise SystemExit(f"unknown scenario '{scenario}'. Available: {available}")
+    tmp = Path(tempfile.mkdtemp(prefix="triage-"))
+    shutil.copy(fixture, tmp / "state.json")
+    return str(tmp)
+
+
 def main(argv: list[str] | None = None) -> int:
-    argv = argv if argv is not None else sys.argv[1:]
-    task = argv[0] if argv else "Investigate the incident: error rate spiked at 14:05."
+    argv = list(argv if argv is not None else sys.argv[1:])
+
+    scenario: str | None = None
+    if "--scenario" in argv:
+        i = argv.index("--scenario")
+        try:
+            scenario = argv[i + 1]
+        except IndexError:
+            raise SystemExit("--scenario requires a value") from None
+        del argv[i : i + 2]
+
+    task = " ".join(argv) if argv else "Investigate the incident: error rate spiked at 14:05."
     settings = load_settings()
+    if scenario:
+        settings.victim_root = _scenario_root(scenario)
 
     provider = None
     if settings.provider == "mock":
