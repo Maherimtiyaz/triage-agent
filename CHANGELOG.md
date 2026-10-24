@@ -4,6 +4,27 @@ All notable changes are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`OpenAICompatibleProvider`** — works with any `POST /v1/chat/completions`
+  endpoint: Ollama, OmniRoute, LM Studio, llama.cpp, vLLM, OpenRouter. Written
+  against stdlib `urllib`, so the base install still has no new dependency.
+- **Free-model support** — the agent now runs end-to-end with no API key via
+  Ollama (`gemma4:31b-cloud`, free on Ollama's free plan, ~1.5s/step).
+- **`--scenario` flag** — `python -m triage_agent --scenario disk_full "..."` runs
+  against exactly one fixture, so the alert matches the data.
+- 9 provider tests covering wire-format conversion, malformed tool arguments,
+  stop-reason mapping, and connection failures surfacing as `ProviderError`.
+
+### Changed
+
+- `SYSTEM_PROMPT` now forbids citing anything but a real tool name as an
+  evidence `source`. Free models were citing `"alert"`.
+- The eval scorer now fails on **any** fabricated evidence source, not just when
+  all sources are invalid.
+
 ## [0.1.0] - 2026-10-19
 
 First working harness. One task: given an alert, investigate a service and

@@ -10,7 +10,7 @@ contact with production.
 [![CI](https://github.com/Maherimtiyaz/triage-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Maherimtiyaz/triage-agent/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-35%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-44%20passing-brightgreen)
 ![Evals](https://img.shields.io/badge/evals-3%2F3-success)
 
 ```
@@ -35,6 +35,7 @@ model.
 - [The one idea](#the-one-idea)
 - [Quickstart](#quickstart)
 - [Using a real model](#using-a-real-model)
+- [Free models — no API key](#free-models--no-api-key)
 - [What it does](#what-it-does)
 - [The seven subsystems](#the-seven-subsystems)
 - [Configuration reference](#configuration-reference)
@@ -117,6 +118,47 @@ tool-description bug. That is the lesson.
 
 > **Costs real money.** Budgets are enforced (`TRIAGE_MAX_COST_USD`), but start
 > with `TRIAGE_MAX_COST_USD=0.25`.
+
+## Free models — no API key
+
+Any endpoint that speaks `POST /v1/chat/completions` works. [Ollama](https://ollama.com)
+is the easiest free path, because it runs keyless on your machine.
+
+```bash
+# install once, then pull/select a model
+ollama list
+```
+
+```bash
+TRIAGE_PROVIDER=openai-compatible
+TRIAGE_BASE_URL=http://127.0.0.1:11434/v1
+TRIAGE_MODEL=gemma4:31b-cloud     # free on Ollama's free plan, ~1.5s/step
+# TRIAGE_MODEL=llama3.1:8b        # fully local + private, but ~4 min/step on CPU
+TRIAGE_API_KEY=                    # blank for a local Ollama
+```
+
+```bash
+python -m triage_agent --scenario disk_full "Alert: ingest halted at 02:16."
+```
+
+A real run against a free model:
+
+```
+[ 1627.6ms] step 1 LLM  in=837  out=65  -> tool_use tools=['get_metric','list_deploys','query_logs']
+[ 2255.0ms] step 2 LLM  in=1111 out=21  -> tool_use tools=['read_file']
+[ 2256.1ms] step 2 TOOL ERR read_file({"path": "config.yaml"}) error=tool_exception
+[ 5049.2ms] run_end: {"status": "ok", "severity": "SEV1"}
+```
+
+Notice step 2: the model guessed a file that does not exist, got an error back,
+and kept going. It recovered because tools return failures instead of raising.
+
+The same adapter covers **OmniRoute, LM Studio, llama.cpp, vLLM and OpenRouter** —
+point `TRIAGE_BASE_URL` at their `/v1` and set `TRIAGE_API_KEY` if they need one.
+
+> Free models are noticeably weaker at tool-calling than frontier models. Expect
+> more redundant queries and occasional malformed JSON — which is exactly why the
+> harness validates output and retries. Watch `tool_errors` in the trace summary.
 
 ---
 
@@ -233,8 +275,10 @@ All configuration is environment-driven. Start from `.env.example`.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `TRIAGE_PROVIDER` | `mock` | `mock` (offline, free) or `anthropic` |
+| `TRIAGE_PROVIDER` | `mock` | `mock`, `anthropic`, or `openai-compatible` (aliases: `ollama`, `omniroute`, `openai`) |
 | `TRIAGE_MODEL` | `mock-model` | Model id; drives pricing lookup |
+| `TRIAGE_BASE_URL` | `http://127.0.0.1:11434/v1` | Endpoint for `openai-compatible` providers |
+| `TRIAGE_API_KEY` | — | Key for `openai-compatible`; blank for local Ollama |
 | `ANTHROPIC_API_KEY` | — | Required only for `anthropic` |
 | `TRIAGE_VICTIM_ROOT` | `victim` | Sandbox root the agent may read |
 | `TRIAGE_ALLOWED_TOOLS` | `query_logs,list_deploys,get_metric,read_file` | Comma-separated allowlist |
