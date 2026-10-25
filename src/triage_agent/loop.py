@@ -22,6 +22,7 @@ from triage_agent.guardrails import Policy, account_usage
 from triage_agent.output import IncidentReport, parse_report, retry_message
 from triage_agent.providers import (
     AnthropicProvider,
+    CassetteMismatch,
     MockProvider,
     OpenAICompatibleProvider,
     Provider,
@@ -32,7 +33,7 @@ from triage_agent.tools import build_registry
 from triage_agent.tracing import Trace
 from triage_agent.types import Budget, Message
 
-Status = Literal["ok", "budget_exhausted", "provider_error", "invalid_output"]
+Status = Literal["ok", "budget_exhausted", "provider_error", "invalid_output", "cassette_stale"]
 
 SYSTEM_PROMPT = """You are an SRE incident triage agent.
 
@@ -153,6 +154,14 @@ def run(
                 on_retry=lambda n, d, e: trace.record(
                     "llm_call", budget.steps_used, retry=n, delay=round(d, 2), error=str(e)[:200]
                 ),
+            )
+        except CassetteMismatch as exc:
+            # A stale cassette is a harness fault, not an incident. Fail loudly
+            # and tell the operator exactly how to fix it.
+            trace.record("run_end", budget.steps_used, status="cassette_stale", reason=str(exc))
+            return AgentResult(
+                status="cassette_stale", reason=str(exc), trace=trace,
+                budget=budget, messages=messages,
             )
         except ProviderError as exc:
             trace.record("run_end", budget.steps_used, status="provider_error", reason=str(exc))
