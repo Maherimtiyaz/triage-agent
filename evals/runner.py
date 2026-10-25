@@ -116,7 +116,13 @@ def score_case(case: Case, cassette_dir: Path) -> Score:
         sc.cost_usd = round(result.budget.cost_usd, 6)
 
     if result.status != "ok" or result.report is None:
-        sc.notes.append(f"run did not produce a report ({result.status}: {result.reason})")
+        if result.status == "cassette_stale":
+            sc.notes.append(
+                f"STALE CASSETTE {case.cassette} — the harness no longer builds the "
+                f"recorded requests. Re-record it. ({result.reason})"
+            )
+        else:
+            sc.notes.append(f"run did not produce a report ({result.status}: {result.reason})")
         return sc
 
     haystack = f"{result.report.root_cause} {result.report.summary}".lower()
