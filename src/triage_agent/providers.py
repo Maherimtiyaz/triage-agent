@@ -11,6 +11,7 @@ replaying them in CI is the standard way to keep agent tests fast and free.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import time
@@ -46,23 +47,85 @@ class ProviderError(RuntimeError):
     """Retryable-by-default provider failure (rate limit, 5xx, timeout)."""
 
 
+class CassetteMismatch(RuntimeError):
+    """The request built at replay time is not the one that was recorded.
+
+    Deliberately NOT a `ProviderError`: retrying cannot fix a stale cassette,
+    and treating it as transient would hide exactly the drift this exists to
+    catch. The loop turns it into a first-class `cassette_stale` status.
+    """
+
+
+def canonical_request_hash(messages: list[Message], tools: list[ToolSpec]) -> str:
+    """Fingerprint everything that determines a model response.
+
+    Covers the conversation (so TOOL OUTPUT changes count) and the tool specs
+    (so schema and description changes count). Recording only the response side
+    is what let a cassette replay happily after a tool started returning a
+    different shape — the transcript looked fine, the world had moved on.
+    """
+    payload = {
+        "messages": [
+            {
+                "role": m.role,
+                "content": m.content,
+                "tool_calls": [
+                    {"id": c.id, "name": c.name, "arguments": c.arguments}
+                    for c in m.tool_calls
+                ],
+                "tool_call_id": m.tool_call_id,
+            }
+            for m in messages
+        ],
+        "tools": [
+            {
+                "name": t.name,
+                "description": t.description,
+                "input_schema": t.input_schema,
+            }
+            for t in tools
+        ],
+    }
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
 class MockProvider:
     """A scripted provider.
 
     Two modes:
       * `script=[...]`    — return canned responses in order (unit tests)
       * `from_cassette()` — replay a recorded JSON transcript (evals, CI)
+
+    Cassettes recorded with a `request_hash` are verified: if the harness now
+    builds a different request than the one recorded, replay raises
+    `CassetteMismatch` instead of answering a question nobody asked.
     """
 
-    def __init__(self, script: list[LLMResponse] | None = None) -> None:
+    def __init__(
+        self,
+        script: list[LLMResponse] | None = None,
+        *,
+        request_hashes: list[str | None] | None = None,
+        verify: bool = True,
+        source: str | None = None,
+    ) -> None:
         self._script = list(script or [])
+        self._hashes = list(request_hashes or [])
+        self._verify = verify
+        self._source = source
         self._i = 0
         self.calls: list[list[Message]] = []  # for assertions
 
     @classmethod
-    def from_cassette(cls, path: str | Path) -> MockProvider:
+    def from_cassette(cls, path: str | Path, *, verify: bool = True) -> MockProvider:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls([_response_from_dict(r) for r in data["responses"]])
+        return cls(
+            [_response_from_dict(r) for r in data["responses"]],
+            request_hashes=[r.get("request_hash") for r in data["responses"]],
+            verify=verify,
+            source=str(path),
+        )
 
     def complete(
         self,
@@ -79,6 +142,18 @@ class MockProvider:
                 message=Message.assistant("(mock: script exhausted)"),
                 stop_reason="end_turn",
             )
+
+        expected = self._hashes[self._i] if self._i < len(self._hashes) else None
+        if self._verify and expected:
+            actual = canonical_request_hash(messages, tools)
+            if actual != expected:
+                raise CassetteMismatch(
+                    f"cassette '{self._source}' is stale at turn {self._i + 1}: the "
+                    "harness built a different request than the one recorded. A tool "
+                    "output, a tool schema, or the system prompt changed since "
+                    "recording. Re-record it: --record <cassette path>"
+                )
+
         resp = self._script[self._i]
         self._i += 1
         return resp
@@ -117,10 +192,14 @@ def _response_from_dict(d: dict) -> LLMResponse:
 CASSETTE_VERSION = 1
 
 
-def _response_to_dict(resp: LLMResponse) -> dict:
-    """Inverse of `_response_from_dict` — the on-disk cassette shape."""
+def _response_to_dict(resp: LLMResponse, request_hash: str | None = None) -> dict:
+    """Inverse of `_response_from_dict` — the on-disk cassette shape.
+
+    `request_hash` is what makes replay verifiable: it binds this response to
+    the exact request that produced it.
+    """
     msg = resp.message
-    return {
+    entry: dict = {
         "message": {
             "role": msg.role,
             "content": msg.content,
@@ -136,6 +215,9 @@ def _response_to_dict(resp: LLMResponse) -> dict:
             "cache_read_tokens": resp.usage.cache_read_tokens,
         },
     }
+    if request_hash:
+        entry["request_hash"] = request_hash
+    return entry
 
 
 class RecordingProvider:
@@ -161,6 +243,7 @@ class RecordingProvider:
         self._metadata = dict(metadata or {})
         self.responses: list[LLMResponse] = []
         self.requests: list[list[Message]] = []
+        self.request_hashes: list[str] = []
 
     def complete(
         self,
@@ -171,11 +254,15 @@ class RecordingProvider:
         timeout_s: float = 60.0,
     ) -> LLMResponse:
         self.requests.append(list(messages))
+        # Hash BEFORE the call so the response is bound to the request that
+        # actually produced it, not to whatever the harness built afterwards.
+        request_hash = canonical_request_hash(messages, tools)
         resp = self._inner.complete(
             messages, tools, max_tokens=max_tokens, timeout_s=timeout_s
         )
         # Deliberately after the call: a raise means nothing is recorded.
         self.responses.append(resp)
+        self.request_hashes.append(request_hash)
         return resp
 
     def save(self) -> Path:
@@ -186,8 +273,12 @@ class RecordingProvider:
                 **self._metadata,
                 "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "turns": len(self.responses),
+                "verifiable": True,
             },
-            "responses": [_response_to_dict(r) for r in self.responses],
+            "responses": [
+                _response_to_dict(r, self.request_hashes[i])
+                for i, r in enumerate(self.responses)
+            ],
         }
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
