@@ -26,13 +26,25 @@ versioning: [SemVer](https://semver.org/).
   the exact shape `MockProvider.from_cassette` already consumes, and stamps
   provenance (`provider`, `model`, `scenario`, `task`, `recorded_at`, `turns`).
   Failed calls are never recorded, so a retried `429` cannot poison a replay.
-- 6 recording tests covering dict round-trip, cassette shape, failure exclusion,
-  end-to-end replay fidelity, and divergence detection.
+- 10 recording tests covering dict round-trip, cassette shape, failure
+  exclusion, end-to-end replay fidelity, divergence detection, and staleness.
+- **Verifiable cassettes** — every recorded response now carries a SHA-256 of the
+  exact request that produced it: the conversation including tool results, plus
+  the tool specs. Replay re-hashes the request and raises `CassetteMismatch` when
+  it moved, so a changed tool output, a changed schema, or an edited system
+  prompt can no longer replay silently against a stale transcript.
+- **`cassette_stale` status** — the loop turns a mismatch into a first-class
+  terminal state carrying the turn number and a re-record instruction, rather
+  than crashing or being retried as a transient provider error.
 
 ### Changed
 
 - `--record` refuses to run under the mock provider rather than writing a
   cassette of a cassette.
+- The three committed cassettes were backfilled with request hashes by replaying
+  their own scripts against the current fixtures. Responses were verified
+  identical before and after, so the repo's evals are now drift-checked without
+  changing what they assert.
 - `SYSTEM_PROMPT` now forbids citing anything but a real tool name as an
   evidence `source`. Free models were citing `"alert"`.
 - The eval scorer now fails on **any** fabricated evidence source, not just when

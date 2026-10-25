@@ -204,9 +204,38 @@ The cassette carries its own provenance:
 ```
 
 Only **successful** provider calls are recorded, so a retried `429` can never
-poison the transcript. Requests are kept in memory for debugging but are not
-persisted: the harness rebuilds them from the fixture each turn, which is what
-makes a stale cassette fail loudly instead of quietly drifting.
+poison the transcript.
+
+### What a cassette actually pins down
+
+A cassette stores each response *and* a SHA-256 of the exact request that
+produced it — the conversation (including every tool result) plus the tool specs.
+On replay the harness re-hashes the request it just built and refuses to answer
+if the hash moved:
+
+```
+bad_deploy   cassette_stale   False  2
+    note: STALE CASSETTE bad_deploy.json — the harness no longer builds the
+    recorded requests. Re-record it. (stale at turn 3: ...)
+```
+
+That closes the gap a response-only cassette leaves open. Change a tool's return
+format, rename a field, tighten a schema, edit the system prompt — the replay
+used to hand back yesterday's answer to today's question. Now it fails at the
+first turn where the world and the recording disagree, and names the turn.
+
+Two deliberate properties:
+
+- **It is not retried.** `CassetteMismatch` is not a `ProviderError`, so the
+  retry wrapper does not sleep and re-try a deterministic disagreement. It
+  surfaces as the terminal status `cassette_stale`.
+- **It hashes what the model saw, not the whole fixture.** Adding an `INFO`
+  line to a fixture does not invalidate a cassette whose logs are queried with
+  `level=ERROR` — the model's input genuinely did not change. Only drift that
+  reaches the model counts.
+
+The one honest exception: `run_cmd` output is host-dependent. If you enable it,
+record cassettes on the machine they will replay on.
 
 **Re-record when** you change a prompt, a tool description, or a fixture. The
 eval suite goes red first; re-record, read the cassette diff, and if the new
@@ -344,11 +373,12 @@ models** — stale pricing silently corrupts cost attribution.
 
 ## Architecture
 
-A run is a bounded loop with four possible terminal states:
+A run is a bounded loop with five possible terminal states:
 
 ```
 task → [budget → compact → model → tools]* → report | budget_exhausted |
-                                            provider_error | invalid_output
+                                            provider_error | invalid_output |
+                                            cassette_stale
 ```
 
 `run()` never raises for model, tool, or provider problems — it always returns an
